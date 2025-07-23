@@ -2,7 +2,7 @@ services:
   emqx:
     image: swr.cn-north-4.myhuaweicloud.com/ddn-k8s/docker.io/emqx/emqx:5.8.6
     container_name: emqx
-    hostname: pc.emqx.dev
+    hostname: emqx-node1.cluster.local
     ports:
       - "1883:1883"
       - "18083:18083"
@@ -10,7 +10,7 @@ services:
       - emqx_data:/opt/emqx/data
       - ./emqx.conf:/opt/emqx/etc/emqx.conf
     environment:
-      - EMQX_HOST=pc.emqx.dev
+      - EMQX_HOST=emqx-node1.cluster.local
       - EMQX_CLUSTER__DISCOVERY_STRATEGY=static
       - EMQX_DASHBOARD__DEFAULT_USERNAME=admin
       - EMQX_DASHBOARD__DEFAULT_PASSWORD=password@123
