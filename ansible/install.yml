@@ -1,0 +1,65 @@
+---
+- name: Deploy EMQX to remote host
+  hosts: all
+  vars:
+    docker_compose_deploy_dir: "/emqx-deploy"
+    emqx_container_name: "emqx-standalone"
+
+  # Confirmation prompt
+  vars_prompt:
+    - name: confirmation
+      prompt: "Are you sure you want to deploy EMQX to {{ target_host }}? (yes/no)"
+      private: no
+      default: "no"
+
+  tasks:
+    - name: Validate confirmation
+      fail:
+        msg: "Deployment cancelled by user"
+      when: confirmation != "yes"
+
+    - name: Validate target host
+      fail:
+        msg: "Target host must be specified via -e target_host=IP"
+      when: target_host is not defined
+
+    - name: Create deployment directory
+      file:
+        path: "{{ docker_compose_deploy_dir }}"
+        state: directory
+        mode: '0755'
+
+    - name: Generate docker compose yml from template
+      template:
+        src: docker-compose.yml.j2
+        dest: "{{ docker_compose_deploy_dir }}/docker-compose.yml"
+        mode: '0644'
+        owner: root
+        group: root
+
+    - name: Copy EMQX conf
+      ansible.builtin.copy:
+        src: emqx.conf
+        dest: "{{ docker_compose_deploy_dir }}/"
+        mode: '0644'
+        owner: root
+        group: root
+
+    - name: Start EMQX container
+      command: docker compose up -d
+      args:
+        chdir: "{{ docker_compose_deploy_dir }}"
+
+    - name: Check EMQX container status
+      command: docker inspect -f '{{"{{.State.Running}}"}}' {{ emqx_container_name }}
+      register: container_state
+      until: container_state.stdout == "true"
+      retries: 12
+      delay: 5
+      changed_when: false
+
+    - name: Show deployment result
+      debug:
+        msg: |
+          EMQX successfully deployed to {{ target_host }}!
+          Deployment dir: {{ docker_compose_deploy_dir }}

@@ -1,0 +1,179 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: emqx-headless
+  namespace: emqx
+spec:
+  selector:
+    app: emqx
+  clusterIP: None
+  publishNotReadyAddresses: true
+  ports:
+    - name: mqtt
+      port: 1883
+    - name: ws
+      port: 8083
+    - name: cluster
+      port: 4370
+    - name: epmd
+      port: 5369
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: emqx-nodeport
+  namespace: emqx
+spec:
+  selector:
+    app: emqx
+  type: NodePort
+  ports:
+    - name: mqtt
+      port: 1883
+      targetPort: 1883
+      nodePort: 31883
+    - name: ws
+      port: 8083
+      targetPort: 8083
+      nodePort: 30083
+    - name: dashboard
+      port: 18083
+      targetPort: 18083
+      nodePort: 31083
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: emqx-config
+  namespace: emqx
+data:
+  emqx.conf: |
+    node {
+      data_dir = "/opt/emqx/data"
+    }
+
+    cluster {
+      name = emqxcl
+      discovery_strategy = static
+      autoheal = true
+      static {
+        seeds = ["emqx@emqx-0.emqx-headless.emqx.svc.cluster.local", 
+                 "emqx@emqx-1.emqx-headless.emqx.svc.cluster.local", 
+                 "emqx@emqx-2.emqx-headless.emqx.svc.cluster.local"]
+      }
+    }
+
+    mqtt {
+      max_packet_size = 268435455
+    }
+
+    listeners.tcp.default {
+      bind = 1883
+      max_connections = 1024
+    }
+
+    listeners.ssl.default {
+      enable = false
+    }
+
+    listeners.ws.default {
+      enable = true
+      bind = 8083
+      max_connections = 1024
+    }
+
+    listeners.wss.default {
+      enable = false
+    }
+
+    dashboard {
+      listeners {
+        http {
+          bind = 18083
+        }
+      }
+    }
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: emqx
+  namespace: emqx
+spec:
+  serviceName: emqx-headless
+  replicas: 3
+  selector:
+    matchLabels:
+      app: emqx
+  updateStrategy:
+    type: RollingUpdate
+  template:
+    metadata:
+      labels:
+        app: emqx
+    spec:
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchExpressions:
+              - key: app
+                operator: In
+                values:
+                - emqx
+            topologyKey: "kubernetes.io/hostname"
+      containers:
+      - name: emqx
+        imagePullPolicy: IfNotPresent
+        image: "mydockerregistry.com:5000/emqx:5.8.6"
+        ports:
+        - containerPort: 1883
+          name: mqtt
+        - containerPort: 8083
+          name: ws
+        - containerPort: 18083
+          name: dashboard
+        - containerPort: 4370
+          name: cluster
+        - containerPort: 5369
+          name: epmd
+        env:
+        - name: POD_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        - name: EMQX_NODE__NAME
+          value: "emqx@$(POD_NAME).emqx-headless.emqx.svc.cluster.local"
+        - name: EMQX_NODE__COOKIE
+          value: "emqxsecretcookie"
+        - name: EMQX_DASHBOARD__DEFAULT_USERNAME
+          value: "admin"
+        - name: EMQX_DASHBOARD__DEFAULT_PASSWORD
+          value: "password@123"
+        volumeMounts:
+        - name: emqx-data
+          mountPath: /opt/emqx/data
+        - name: emqx-config
+          mountPath: /opt/emqx/etc/emqx.conf
+          subPath: emqx.conf
+        livenessProbe:
+          tcpSocket:
+            port: 1883
+          initialDelaySeconds: 60
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+      volumes:
+      - name: emqx-config
+        configMap:
+          name: emqx-config
+  podManagementPolicy: OrderedReady
+  volumeClaimTemplates:
+  - metadata:
+      name: emqx-data
+    spec:
+      accessModes: [ "ReadWriteOnce" ]
+      resources:
+        requests:
+          storage: 2Gi
+      storageClassName: "local-path"

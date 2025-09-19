@@ -1,0 +1,34 @@
+services:
+  emqx:
+    image: swr.cn-north-4.myhuaweicloud.com/ddn-k8s/docker.io/emqx/emqx:5.8.6
+    container_name: {{ emqx_container_name }}
+    ports:
+      - "1883:1883"
+      - "18083:18083"
+    volumes:
+      - emqx_data:/opt/emqx/data
+      - ./emqx.conf:/opt/emqx/etc/emqx.conf
+    environment:
+      - EMQX_DASHBOARD__DEFAULT_USERNAME=admin
+      - EMQX_DASHBOARD__DEFAULT_PASSWORD=password@123
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "/opt/emqx/bin/emqx_ctl", "status"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    sysctls: # 5w TCP connections
+      net.core.somaxconn: 8192
+      net.ipv4.tcp_syncookies: 1
+      net.ipv4.tcp_max_syn_backlog: 16384
+      net.ipv4.tcp_max_tw_buckets: 60000
+      net.ipv4.tcp_fin_timeout: 30
+      net.ipv4.ip_local_port_range: "10000 65535"
+    ulimits:
+      nproc: 65536
+      nofile:
+        soft: 131072
+        hard: 131072
+
+volumes:
+  emqx_data:

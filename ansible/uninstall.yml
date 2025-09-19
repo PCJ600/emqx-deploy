@@ -1,0 +1,42 @@
+---
+- name: Uninstall EMQX from remote host
+  hosts: all
+  vars:
+    docker_compose_deploy_dir: "/emqx-deploy"
+
+  # Double confirmation prompts
+  vars_prompt:
+    - name: action_confirmation
+      prompt: "WARNING: This will PERMANENTLY delete all EMQX data! Confirm? (yes/no)"
+      private: no
+      default: "no"
+
+  tasks:
+    - name: Validate confirmations
+      block:
+        - name: Check action confirmation
+          fail:
+            msg: "Uninstallation cancelled by user"
+          when: action_confirmation != "yes"
+
+    - name: Validate target host
+      fail:
+        msg: "Target host must be specified via -e target_host=IP"
+      when: target_host is not defined
+
+    - name: Stop and remove containers, and clean up docker volumes
+      command: docker compose -f {{ docker_compose_deploy_dir }}/docker-compose.yml down -v
+      args:
+        chdir: "{{ docker_compose_deploy_dir }}"
+      ignore_errors: yes
+
+    - name: Remove deployment files
+      file:
+        path: "{{ item }}"
+        state: absent
+      with_items:
+        - "{{ docker_compose_deploy_dir }}"
+
+    - name: Show completion message
+      debug:
+        msg: "EMQX has been completely uninstalled!"
