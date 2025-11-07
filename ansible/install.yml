@@ -3,7 +3,7 @@
   hosts: all
   vars:
     docker_compose_deploy_dir: "/emqx-deploy"
-    emqx_container_name: "emqx-standalone"
+    emqx_container_name: "emqx"
 
   # Confirmation prompt
   vars_prompt:
